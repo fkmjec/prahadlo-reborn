@@ -139,6 +139,8 @@ impl Network {
     fn create_transport_nodes(nodes: &mut Vec<Node>, trips: &HashMap<String, Trip>) {
         // creates transport nodes and the corresponding arrival and departure ones.
         // FIXME extract to a function outside.
+        let mut nodes_at_stops: HashMap<String, Vec<usize>> = HashMap::new();
+
         for trip in trips.values() {
             let mut prev_transport: Option<usize> = None;
             let trip_id = trip.trip_id.clone();
@@ -152,13 +154,23 @@ impl Network {
                     Some(id) => nodes[id].add_edge(transport),
                     None => (),
                 }
-                let mut dep = Network::create_node(nodes, Location::Stop(stop_id.clone()), stop_time.departure_time);
-                let mut arr = Network::create_node(nodes, Location::Stop(stop_id.clone()), stop_time.arrival_time + MINIMAL_TRANSFER_TIME);
+                let dep = Network::create_node(nodes, Location::Stop(stop_id.clone()), stop_time.departure_time);
+                let arr = Network::create_node(nodes, Location::Stop(stop_id.clone()), stop_time.arrival_time + MINIMAL_TRANSFER_TIME);
+                match nodes_at_stops.get_mut(&stop_id) {
+                    Some(vec) =>  { 
+                        vec.push(dep); 
+                        vec.push(arr);
+                    },
+                    None => {
+                        nodes_at_stops.insert(stop_id.clone(), vec![dep, arr]);
+                    },
+                }
                 nodes[transport].add_edge(arr);
                 nodes[dep].add_edge(transport);
                 prev_transport = Some(transport);
             }
         }
+        Network::add_node_chaining(nodes, &mut nodes_at_stops);
     }
 
     fn sort_node_ids_by_time(nodes: &Vec<Node>, ids: &mut Vec<usize>) -> Vec<usize> {
@@ -167,7 +179,7 @@ impl Network {
     }
 
     /// Adds the departure transfer chain, locks the departure nodes
-    fn add_dep_node_chaining(nodes: &mut Vec<Node>, node_ids_by_stop: &mut HashMap<String, Vec<usize>>) {
+    fn add_node_chaining(nodes: &mut Vec<Node>, node_ids_by_stop: &mut HashMap<String, Vec<usize>>) {
         let sorted: Vec<Vec<usize>> = node_ids_by_stop.values_mut()
             .map(|ids_by_stop| Network::sort_node_ids_by_time(nodes, ids_by_stop))
             .collect();
