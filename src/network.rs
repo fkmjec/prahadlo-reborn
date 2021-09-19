@@ -24,7 +24,7 @@ impl TransferPoint {
             for index in 0..self.departure_nodes.len() - 2 {
                 let dep = self.departure_nodes[index];
                 let arr = self.departure_nodes[index + 1];
-                nodes[dep].add_edge(&arr);
+                nodes[dep].add_edge(arr);
             }
         }
     }
@@ -84,8 +84,8 @@ impl Node {
         &self.edges
     }
 
-    pub fn add_edge(&mut self, node: &usize) {
-        &self.edges.push(*node);
+    pub fn add_edge(&mut self, node: usize) {
+        &self.edges.push(node);
     }
 }
 
@@ -149,31 +149,36 @@ impl Network {
                 let transport: usize = Network::create_node(nodes, Location::Trip(trip_id.clone()), stop_time.departure_time);
                 // add edge from previous transport node
                 match prev_transport {
-                    Some(id) => nodes[id].add_edge(&transport),
+                    Some(id) => nodes[id].add_edge(transport),
                     None => (),
                 }
                 let mut dep = Network::create_node(nodes, Location::Stop(stop_id.clone()), stop_time.departure_time);
                 let mut arr = Network::create_node(nodes, Location::Stop(stop_id.clone()), stop_time.arrival_time + MINIMAL_TRANSFER_TIME);
-                nodes[transport].add_edge(&arr);
-                nodes[dep].add_edge(&transport);
+                nodes[transport].add_edge(arr);
+                nodes[dep].add_edge(transport);
                 prev_transport = Some(transport);
             }
         }
     }
 
+    fn sort_node_ids_by_time(nodes: &Vec<Node>, ids: &mut Vec<usize>) -> Vec<usize> {
+        ids.sort_by(|a, b| nodes[*a].get_time().cmp(&nodes[*b].get_time()));
+        ids.clone()
+    }
+
     /// Adds the departure transfer chain, locks the departure nodes
-    // fn add_dep_node_chaining(&mut self) {
-    //     for 
-    //     if self.departure_nodes.len() > 1 {
-    //         self.departure_nodes
-    //             .sort_by(|a, b| nodes[*a].get_time().cmp(&nodes[*b].get_time()));
-    //         for index in 0..self.departure_nodes.len() - 2 {
-    //             let dep = self.departure_nodes[index];
-    //             let arr = self.departure_nodes[index + 1];
-    //             nodes[dep].add_edge(&arr);
-    //         }
-    //     }
-    // }    
+    fn add_dep_node_chaining(nodes: &mut Vec<Node>, node_ids_by_stop: &mut HashMap<String, Vec<usize>>) {
+        let sorted: Vec<Vec<usize>> = node_ids_by_stop.values_mut()
+            .map(|ids_by_stop| Network::sort_node_ids_by_time(nodes, ids_by_stop))
+            .collect();
+        for sorted_ids_at_stop in sorted {
+            for index in 0..(sorted_ids_at_stop.len() - 1) {
+                let departure = sorted_ids_at_stop[index];
+                let arrival = sorted_ids_at_stop[index + 1];
+                nodes[departure].add_edge(arrival);
+            }
+        }
+    }
 
     pub fn new(
         path: &Path
