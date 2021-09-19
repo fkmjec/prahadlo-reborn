@@ -1,10 +1,11 @@
 use crate::gtfs::*;
+use crate::geo_utils::*;
+
+use geo_types::Point;
 use core::cmp::Ordering;
-use serde::Deserialize;
 use std::collections::{BinaryHeap, HashMap};
 use std::path::Path;
 
-pub static MINIMAL_TRANSFER_TIME: u32 = 0;
 
 /// This is an entry point .
 struct TransferPoint {
@@ -164,7 +165,6 @@ impl Network {
     fn create_transport_nodes(nodes: &mut Vec<Node>, trips: &HashMap<String, Trip>) {
         // creates transport nodes and the corresponding arrival and departure ones.
         // FIXME extract to a function outside.
-        let mut nodes_at_stops: HashMap<String, Vec<usize>> = HashMap::new();
 
         for trip in trips.values() {
             let mut prev_transport: Option<usize> = None;
@@ -181,21 +181,11 @@ impl Network {
                 }
                 let dep = Network::create_node(nodes, Location::Stop(stop_id.clone()), stop_time.departure_time);
                 let arr = Network::create_node(nodes, Location::Stop(stop_id.clone()), stop_time.arrival_time + MINIMAL_TRANSFER_TIME);
-                match nodes_at_stops.get_mut(&stop_id) {
-                    Some(vec) =>  { 
-                        vec.push(dep); 
-                        vec.push(arr);
-                    },
-                    None => {
-                        nodes_at_stops.insert(stop_id.clone(), vec![dep, arr]);
-                    },
-                }
                 nodes[transport].add_edge(arr);
                 nodes[dep].add_edge(transport);
                 prev_transport = Some(transport);
             }
         }
-        Network::add_node_chaining(nodes, &mut nodes_at_stops);
     }
 
     fn sort_node_ids_by_time(nodes: &Vec<Node>, ids: &mut Vec<usize>) -> Vec<usize> {
@@ -217,6 +207,26 @@ impl Network {
         }
     }
 
+    fn create_node_chains(nodes: &mut Vec<Node>) -> HashMap<String, Vec<usize>> {
+        let mut nodes_by_stops: HashMap<String, Vec<usize>> = HashMap::new();
+        
+        for (index, node) in nodes.iter().enumerate() {
+            match &node.location {
+                Location::Stop(id) => {
+                    match nodes_by_stops.get_mut(id) {
+                        Some(vector) => vector.push(index),
+                        None => {
+                            nodes_by_stops.insert(id.clone(), vec![index]);
+                        },
+                    };  
+                },
+                Location::Trip(_) => (),
+            }
+        }
+        Network::add_node_chaining(nodes, &mut nodes_by_stops);
+        nodes_by_stops
+    }
+    
     pub fn new(
         path: &Path
     ) -> Network {
@@ -229,6 +239,7 @@ impl Network {
         let mut nodes = Vec::new();
 
         Network::create_transport_nodes(&mut nodes, &trips);
+        let stop_node_chains = Network::create_node_chains(&mut nodes);
 
         let mut nw = Network {
             stops: stops,
