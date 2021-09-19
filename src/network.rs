@@ -115,11 +115,11 @@ pub struct Network {
     routes: HashMap<String, Route>,
     trips: HashMap<String, Trip>,
     services: HashMap<String, Service>,
+    hop_on_points: HashMap<String, Vec<usize>>,
     nodes: Vec<Node>,
 }
 
 impl Network {
-
     pub fn print_debug_info(&self) {
         println!("Number of stops: {}", self.stops.len());
         println!("Number of routes: {}", self.routes.len());
@@ -128,16 +128,76 @@ impl Network {
         println!("Number of nodes: {}", self.nodes.len());
     }
 
+    /// Creates a node, adds it to the node vector, returns the id
+    fn create_node(nodes: &mut Vec<Node>, location: Location, time: u32) -> usize {
+        let node = Node::new(location, nodes.len(), time);
+        let node_id = node.node_id;
+        nodes.push(node);
+        return node_id;
+    }
+
+    fn create_transport_nodes(nodes: &mut Vec<Node>, trips: &HashMap<String, Trip>) {
+        // creates transport nodes and the corresponding arrival and departure ones.
+        // FIXME extract to a function outside.
+        for trip in trips.values() {
+            let mut prev_transport: Option<usize> = None;
+            let trip_id = trip.trip_id.clone();
+            for j in 0..trip.stop_times.len() {
+                let stop_time = &trip.stop_times[j];
+                let stop_id = stop_time.stop_id.clone();
+
+                let transport: usize = Network::create_node(nodes, Location::Trip(trip_id.clone()), stop_time.departure_time);
+                // add edge from previous transport node
+                match prev_transport {
+                    Some(id) => nodes[id].add_edge(&transport),
+                    None => (),
+                }
+                let mut dep = Network::create_node(nodes, Location::Stop(stop_id.clone()), stop_time.departure_time);
+                let mut arr = Network::create_node(nodes, Location::Stop(stop_id.clone()), stop_time.arrival_time + MINIMAL_TRANSFER_TIME);
+                nodes[transport].add_edge(&arr);
+                nodes[dep].add_edge(&transport);
+                prev_transport = Some(transport);
+            }
+        }
+    }
+
+    /// Adds the departure transfer chain, locks the departure nodes
+    // fn add_dep_node_chaining(&mut self) {
+    //     for 
+    //     if self.departure_nodes.len() > 1 {
+    //         self.departure_nodes
+    //             .sort_by(|a, b| nodes[*a].get_time().cmp(&nodes[*b].get_time()));
+    //         for index in 0..self.departure_nodes.len() - 2 {
+    //             let dep = self.departure_nodes[index];
+    //             let arr = self.departure_nodes[index + 1];
+    //             nodes[dep].add_edge(&arr);
+    //         }
+    //     }
+    // }    
+
     pub fn new(
         path: &Path
     ) -> Network {
+        let stops = load_stops(path);
+        let routes = load_routes(path);
+        let mut trips = load_trips(path);
+        let mut services = load_services(path);
+        let service_exceptions = load_service_exceptions(path, &mut services);
+        let stop_times = load_stop_times(path, &mut trips);
+        let mut nodes = Vec::new();
+
+        Network::create_transport_nodes(&mut nodes, &trips);
+
         let mut nw = Network {
-            stops: load_stops(path),
-            routes: load_routes(path),
-            trips: load_trips(path),
-            services: load_services(path),
-            nodes: Vec::new(),
+            stops: stops,
+            routes: routes,
+            trips: trips,
+            services: services,
+            hop_on_points: HashMap::new(),
+            nodes: nodes,
         };
+        
+
         nw
     }
     /*
