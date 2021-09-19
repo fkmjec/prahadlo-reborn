@@ -58,6 +58,13 @@ pub enum Location {
     Trip(String),
 }
 
+fn print_location(location: &Location) {
+    match location {
+        Location::Stop(stop_id) => println!(" - corresponding to stop {}", stop_id),
+        Location::Trip(trip_id) => println!(" - corresponding to trip {}", trip_id),
+    };
+}
+
 #[derive(Debug, Clone)]
 pub struct Node {
     pub location: Location,
@@ -86,6 +93,12 @@ impl Node {
 
     pub fn add_edge(&mut self, node: usize) {
         &self.edges.push(node);
+    }
+
+    pub fn print_description(&self) {
+        println!("Node with id {}, time {}:", self.node_id, self.time);
+        print_location(&self.location);
+        println!(" - Edges to nodes {:?}", self.edges);
     }
 }
 
@@ -126,6 +139,18 @@ impl Network {
         println!("Number of trips: {}", self.trips.len());
         println!("Number of services: {}", self.services.len());
         println!("Number of nodes: {}", self.nodes.len());
+    }
+
+    pub fn get_node(&self, id: usize) -> &Node {
+        &self.nodes[id]
+    }
+
+    pub fn get_stop(&self, id: String) -> Option<&Stop> {
+        self.stops.get(&id)
+    }
+
+    pub fn get_trip(&self, id: String) -> Option<&Trip> {
+        self.trips.get(&id)
     }
 
     /// Creates a node, adds it to the node vector, returns the id
