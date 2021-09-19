@@ -1,3 +1,6 @@
+use std::io;
+use std::io::Write;
+
 #[derive(Debug, PartialEq, Eq)]
 pub enum Command {
     Help,
@@ -58,22 +61,24 @@ fn print_help() {
 }
 
 fn print_invalid() {
-    
+    println!("The command you entered was incorrect!");
 }
 
 pub fn get_command() -> Command {
     let mut line = String::new();
-    println!("Enter the command: ");
+    print!("> ");
+    io::stdout().flush().unwrap();
     std::io::stdin().read_line(&mut line).unwrap();
     let mut command = command_from_line(&line);
     while command == Command::Invalid || command == Command::Help {
         if command == Command::Invalid {
-            println!("The command you entered was incorrect!");
+            print_invalid();
         } else {
             print_help();
         }
         let mut line = String::new();
-        println!("Enter the command :");
+        print!("> ");
+        io::stdout().flush().unwrap();
         std::io::stdin().read_line(&mut line).unwrap();    
         command = command_from_line(&line);
     }
