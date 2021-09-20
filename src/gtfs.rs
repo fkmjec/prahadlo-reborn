@@ -150,7 +150,6 @@ pub fn load_stops(path: &Path) -> HashMap<String, Stop> {
     let mut stops = HashMap::new();
     let mut file_path_buf = path.to_path_buf();
     file_path_buf.push(Path::new("stops.txt"));
-    let dir = std::env::current_dir().unwrap();
     let file = File::open(file_path_buf.as_path()).unwrap(); // No need for error handling, if this fails, we want to panic
     let mut rdr = csv::Reader::from_reader(file);
     for result in rdr.deserialize() {

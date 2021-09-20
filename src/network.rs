@@ -1,61 +1,16 @@
 use crate::gtfs::*;
 use crate::geo_utils::*;
 
-use geo_types::Point;
 use core::cmp::Ordering;
 use std::collections::{BinaryHeap, HashMap};
 use std::path::Path;
 
-
-/// This is an entry point .
-struct TransferPoint {
-    departure_nodes: Vec<usize>,
-}
-
-impl TransferPoint {
-    pub fn add_dep_node(&mut self, dep_node: usize) {
-        self.departure_nodes.push(dep_node);
-    }
-
-    /// Adds the departure transfer chain, locks the departure nodes
-    pub fn add_dep_node_chaining(&mut self, nodes: &mut Vec<Node>) {
-        if self.departure_nodes.len() > 1 {
-            self.departure_nodes
-                .sort_by(|a, b| nodes[*a].get_time().cmp(&nodes[*b].get_time()));
-            for index in 0..self.departure_nodes.len() - 2 {
-                let dep = self.departure_nodes[index];
-                let arr = self.departure_nodes[index + 1];
-                nodes[dep].add_edge(arr);
-            }
-        }
-    }
-
-    pub fn get_earliest_dep(
-        &self,
-        arr_time: u32,
-        nodes: &Vec<Node>,
-    ) -> Option<usize> {
-        let mut l: i32 = 0;
-        let mut r = self.departure_nodes.len() as i32 - 1;
-        let mut best = None;
-        while l <= r {
-            let middle = (l + r) / 2;
-            let addr = self.departure_nodes[middle as usize];
-            if nodes[addr].get_time() >= arr_time {
-                best = Some(addr);
-                r = middle - 1;
-            }
-            if nodes[self.departure_nodes[middle as usize]].get_time() < arr_time {
-                l = middle + 1;
-            }
-        }
-        best
-    }
-}
+const MAX_PEDESTRIAN_DIST: f32 = 500.0;
+const PEDESTRIAN_SPEED: f32 = 1.0;
 
 #[derive(Debug, Clone)]
 pub enum Location {
-    Stop(String),
+    Stop(String), // Tohle je blbě, je to kvůli tomu zbytečně veliké
     Trip(String),
 }
 
@@ -129,7 +84,7 @@ pub struct Network {
     routes: HashMap<String, Route>,
     trips: HashMap<String, Trip>,
     services: HashMap<String, Service>,
-    hop_on_points: HashMap<String, Vec<usize>>,
+    stop_node_chains: HashMap<String, Vec<usize>>,
     nodes: Vec<Node>,
 }
 
@@ -226,6 +181,53 @@ impl Network {
         Network::add_node_chaining(nodes, &mut nodes_by_stops);
         nodes_by_stops
     }
+
+    /// returns the first departure from stop with id @stop_id after time @time
+    fn get_first_departure(&self, stop_id: &String, time: u32) -> Option<usize> {
+        let stop_node_chain = self.stop_node_chains.get(stop_id).expect("No stop with that ID");
+        Network::bin_search(&self.nodes, time, stop_node_chain)
+    }
+
+    fn bin_search(nodes: &Vec<Node>, time: u32, vector: &Vec<usize>) -> Option<usize> {
+        let mut l: i32 = 0;
+        let mut r = vector.len() as i32 - 1;
+        let mut best = None;
+        while l <= r {
+            let middle = (l + r) / 2;
+            let addr = vector[middle as usize];
+            if nodes[addr].time >= time {
+                best = Some(addr);
+                r = middle - 1;
+            } else {
+                l = middle + 1;
+            }
+        }
+        best
+    }
+
+    fn add_pedestrian_connections(nodes: &mut Vec<Node>, stops: &HashMap<String, Stop>, stop_node_chains: &HashMap<String, Vec<usize>>) {
+        let coords = get_stop_coords_in_utm(stops);
+        let squares = calculate_proximity_squares(&coords, MAX_PEDESTRIAN_DIST);
+        let connections = get_pedestrian_connections(stops, &coords, &squares, MAX_PEDESTRIAN_DIST);
+        for (stop_id, connection_vector) in connections {
+            let empty_ary = vec![];
+            let stop_node_ids = stop_node_chains.get(&stop_id).unwrap_or(&empty_ary);
+            for (neighbouring_stop_id, dist) in connection_vector {
+                let neighbouring_nodes = stop_node_chains.get(&neighbouring_stop_id).unwrap_or(&empty_ary); 
+                let travel_time = (dist / PEDESTRIAN_SPEED) as u32;
+                for node_id in stop_node_ids {
+                    let node_time = nodes[*node_id].time;
+                    let dest_node = Network::bin_search(nodes, node_time + travel_time, neighbouring_nodes);
+                    match dest_node {
+                        Some(id) => {
+                            nodes[*node_id].add_edge(id);
+                        },
+                        None => (),
+                    };
+                }
+            }
+        } 
+    }
     
     pub fn new(
         path: &Path
@@ -240,16 +242,16 @@ impl Network {
 
         Network::create_transport_nodes(&mut nodes, &trips);
         let stop_node_chains = Network::create_node_chains(&mut nodes);
+        Network::add_pedestrian_connections(&mut nodes, &stops, &stop_node_chains);
 
-        let mut nw = Network {
+        let nw = Network {
             stops: stops,
             routes: routes,
             trips: trips,
             services: services,
-            hop_on_points: HashMap::new(),
+            stop_node_chains: stop_node_chains,
             nodes: nodes,
         };
-        
 
         nw
     }

@@ -5,9 +5,6 @@ use crate::gtfs::*;
 use geo_types::Point;
 use proj::Proj;
 
-const MAX_PEDESTRIAN_DIST: f32 = 500.0;
-const PEDESTRIAN_SPEED: f32 = 3.6;
-const BASE_PEDESTRIAN_TRANSFER_TIME: f32 = 60.0;
 pub static MINIMAL_TRANSFER_TIME: u32 = 0;
 
     
@@ -69,7 +66,7 @@ pub fn get_pedestrian_connections(
                             let near_coord = utm_coords.get(near_id).unwrap();
                             let distance = (coord.x() - near_coord.x()).abs()
                                 + (coord.y() - near_coord.y()).abs();
-                            if (distance <= max_conn_dist) {
+                            if distance <= max_conn_dist {
                                 if let Some(connection) = connections.get_mut(stop_id) {
                                     connection.push((near_id.clone(), distance));
                                 } else {
