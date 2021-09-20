@@ -1,5 +1,6 @@
 use crate::gtfs::*;
 use crate::geo_utils::*;
+use crate::text_interface::*;
 
 use core::cmp::Ordering;
 use std::collections::{BinaryHeap, HashMap};
@@ -12,13 +13,6 @@ const PEDESTRIAN_SPEED: f32 = 1.0;
 pub enum Location {
     Stop(String), // Tohle je blbě, je to kvůli tomu zbytečně veliké
     Trip(String),
-}
-
-fn print_location(location: &Location) {
-    match location {
-        Location::Stop(stop_id) => println!(" - corresponding to stop {}", stop_id),
-        Location::Trip(trip_id) => println!(" - corresponding to trip {}", trip_id),
-    };
 }
 
 #[derive(Debug, Clone)]
@@ -51,10 +45,8 @@ impl Node {
         &self.edges.push(node);
     }
 
-    pub fn print_description(&self) {
-        println!("Node with id {}, time {}:", self.node_id, self.time);
-        print_location(&self.location);
-        println!(" - Edges to nodes {:?}", self.edges);
+    pub fn get_location(&self) -> &Location {
+        &self.location
     }
 }
 

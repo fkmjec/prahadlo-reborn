@@ -1,6 +1,8 @@
 use std::io;
 use std::io::Write;
 
+use crate::network::*;
+
 #[derive(Debug, PartialEq, Eq)]
 pub enum Command {
     Help,
@@ -8,6 +10,26 @@ pub enum Command {
     PrintNode(usize),
     PrintStop(String),
     PrintTrip(String),
+}
+
+pub fn get_time_string(time_in_seconds: u32) -> String {
+    let hours = time_in_seconds / 3600;
+    let minutes = (time_in_seconds % 3600) / 60;
+    let seconds = time_in_seconds % 60;
+    format!("{:0>2}:{:0>2}:{:0>2}", hours, minutes, seconds)
+}
+
+fn print_location(location: &Location) {
+    match location {
+        Location::Stop(stop_id) => println!(" - corresponding to stop {}", stop_id),
+        Location::Trip(trip_id) => println!(" - corresponding to trip {}", trip_id),
+    };
+}
+
+fn print_node(node: &Node) {
+    println!("Node with id {}, time {}:", node.node_id, get_time_string(node.get_time()));
+    print_location(node.get_location());
+    println!(" - Edges to nodes {:?}", node.get_edges());
 }
 
 fn parse_print_node(args: &[&str]) -> Command {
@@ -64,7 +86,7 @@ fn print_invalid() {
     println!("The command you entered was incorrect!");
 }
 
-pub fn get_command() -> Command {
+fn get_command() -> Command {
     let mut line = String::new();
     print!("> ");
     io::stdout().flush().unwrap();
@@ -83,4 +105,27 @@ pub fn get_command() -> Command {
         command = command_from_line(&line);
     }
     command
+}
+
+pub fn process_command(nw: &Network) {
+    let cmd = get_command();
+    match cmd {
+        Command::PrintNode(id) => {
+            let node = nw.get_node(id);
+            print_node(node);
+        },
+        Command::PrintStop(id) => {
+            match nw.get_stop(id) {
+                Some(stop) => println!("{:?}", stop),
+                None => println!("ERROR: no stop with such id")
+            }
+        },
+        Command::PrintTrip(id) => {
+            match nw.get_trip(id) {
+                Some(trip) => println!("{:?}", trip),
+                None => println!("ERROR: no trip with such id")
+            }
+        },
+        _ => (), 
+    } 
 }
