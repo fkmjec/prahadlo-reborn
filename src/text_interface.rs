@@ -7,7 +7,7 @@ use crate::network::*;
 enum Command {
     Help,
     Invalid,
-    GetConnection,
+    GetConnection(u32, String, String),
     PrintNode(usize),
     PrintStop(String),
     PrintTrip(String),
@@ -79,8 +79,18 @@ fn parse_print_trip(args: &[&str]) -> Command {
     }
 }
 
-fn parse_conn(args: &[&str]) -> Command {
-    Command::GetConnection
+fn parse_connection(args: &[&str]) -> Command {
+    if args.len() == 3 {
+        let time_res = args[0].parse::<u32>();
+        let dep_stop_id = String::from(args[1]);
+        let dest_stop_id = String::from(args[2]);
+        match time_res {
+            Ok(time) => Command::GetConnection(time, dep_stop_id, dest_stop_id),
+            Err(_) => Command::Invalid,
+        }
+    } else {
+        Command::Invalid
+    }
 }
 
 fn command_from_line(line: &str) -> Command {
@@ -91,7 +101,7 @@ fn command_from_line(line: &str) -> Command {
         "node" => parse_print_node(&args[1..]),
         "stop" => parse_print_stop(&args[1..]),
         "trip" => parse_print_trip(&args[1..]),
-        "conn" => parse_conn(&args[1..]),
+        "conn" => parse_connection(&args[1..]),
         "help" => Command::Help,
         _ => Command::Invalid,
     }
@@ -148,11 +158,17 @@ pub fn process_command(nw: &Network) {
                 None => println!("ERROR: no trip with such id")
             }
         },
-        Command::GetConnection => {
-            let dummy = Connection {
-                nodes: vec![nw.get_node(0).clone(), nw.get_node(1).clone(), nw.get_node(2).clone()],
-            };
-            print_connection(nw, &dummy);
+        Command::GetConnection(time, s1, s2) => {
+            let lookup_result = nw.find_connection(&s1, &s2, time);
+            match lookup_result {
+                Ok(maybe_connection) => {
+                    match maybe_connection {
+                        Some(conn) => print_connection(nw, &conn),
+                        None => println!("No connection found, sorry!"),
+                    }
+                },
+                Err(err_string) => println!("{}", err_string),
+            }
         }
         _ => (), 
     } 

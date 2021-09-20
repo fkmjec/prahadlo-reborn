@@ -3,6 +3,7 @@ use crate::geo_utils::*;
 use crate::text_interface::*;
 
 use core::cmp::Ordering;
+use std::cmp::Reverse;
 use std::collections::{BinaryHeap, HashMap};
 use std::path::Path;
 
@@ -180,8 +181,11 @@ impl Network {
 
     /// returns the first departure from stop with id @stop_id after time @time
     fn get_first_departure(&self, stop_id: &String, time: u32) -> Option<usize> {
-        let stop_node_chain = self.stop_node_chains.get(stop_id).expect("No stop with that ID");
-        Network::bin_search(&self.nodes, time, stop_node_chain)
+        let stop_node_chain_opt = self.stop_node_chains.get(stop_id);
+        match stop_node_chain_opt {
+            Some(stop_node_chain) => Network::bin_search(&self.nodes, time, stop_node_chain),
+            None => None,
+        }
     }
 
     fn bin_search(nodes: &Vec<Node>, time: u32, vector: &Vec<usize>) -> Option<usize> {
@@ -251,46 +255,55 @@ impl Network {
 
         nw
     }
-    /*
+    
     pub fn find_connection(
         &self,
-        dep_stop_id: &str,
-        target_stop_id: &str,
+        dep_stop_id: &String,
+        dest_stop_id: &String,
         time: u32,
-    ) -> Result<Option<u32>, &str> {
+    ) -> Result<Option<Connection>, &str> {
         let mut dists = vec![-1; self.nodes.len()];
         let mut came_from: Vec<i32> = vec![-1; self.nodes.len()];
         let mut heap = BinaryHeap::new();
-        let start = self
-            .stops
-            .get(dep_stop_id)
-            .ok_or("Stop not found.")?
-            .get_earliest_dep(time, &self.nodes)?
-            .ok_or("There is no departure from the stop after the selected time")?;
-        dists[start] = time as i32;
-        heap.push(start);
+        let start_stop = self.stops.get(dep_stop_id).ok_or("Departure stop not found")?;
+        let end_stop = self.stops.get(dep_stop_id).ok_or("Destination stop not found")?;
+        
+        let start = self.get_first_departure(dep_stop_id, time);
+        if start.is_none() {
+            return Ok(None);
+        }
+
+        dists[start.unwrap()] = time as i32;
+        heap.push(&self.nodes[start.unwrap()]);
 
         while let Some(popped) = heap.pop() {
-            println!("POPPED! {:?}", self.nodes[popped]);
-            let node_struct = &self.nodes[popped];
-            if node_struct.stop.borrow().stop_id.as_str() == target_stop_id {
-                let mut index = popped;
-                while came_from[index] != -1 {
-                    println!("{:?}", self.nodes[index]);
-                    index = came_from[index] as usize;
-                }
-                return Ok(Some(node_struct.get_time() - time));
+            let node_struct = popped;
+            match node_struct.get_location() {
+                Location::Stop(stop_id) => {
+                    if stop_id.as_str() == dest_stop_id {
+                        let mut index = popped.node_id;
+                        let mut path = Vec::new();
+                        while came_from[index] != -1 {
+                            path.push(self.nodes[index].clone());
+                            index = came_from[index] as usize;
+                        }
+                        path.reverse();
+                        return Ok(Some(Connection {nodes: path}));
+                    }
+                },
+                _ => (),
             }
-            for edge in node_struct.get_edges() {
-                if dists[edge.target_node] == -1 || ((node_struct.get_time() + edge.cost()) as i32) < dists[edge.target_node] {
-                    heap.push(edge.target_node); // TODO solve this inefficient bullcrap
-                    dists[edge.target_node] = (node_struct.get_time() + edge.cost()) as i32;
-                    came_from[edge.target_node] = popped as i32;
+
+            for target_node in node_struct.get_edges() {
+                let target_node_time = self.nodes[*target_node].get_time() as i32;
+                if dists[*target_node] == -1 || (target_node_time < dists[*target_node]) {
+                    heap.push(&self.nodes[*target_node]);
+                    dists[*target_node] = target_node_time;
+                    came_from[*target_node] = popped.node_id as i32;
                 }
             }
-            dists[popped] = node_struct.get_time() as i32;
+            dists[popped.node_id] = node_struct.get_time() as i32;
         }
         return Ok(None);
-<<<<<<< HEAD
-    } */
+    }
 }
