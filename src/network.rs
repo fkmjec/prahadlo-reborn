@@ -50,6 +50,10 @@ impl Node {
     }
 }
 
+pub struct Connection {
+    pub nodes: Vec<Node>,
+}
+
 impl Eq for Node {}
 
 impl PartialEq for Node {
@@ -93,12 +97,12 @@ impl Network {
         &self.nodes[id]
     }
 
-    pub fn get_stop(&self, id: String) -> Option<&Stop> {
-        self.stops.get(&id)
+    pub fn get_stop(&self, id: &String) -> Option<&Stop> {
+        self.stops.get(id)
     }
 
-    pub fn get_trip(&self, id: String) -> Option<&Trip> {
-        self.trips.get(&id)
+    pub fn get_trip(&self, id: &String) -> Option<&Trip> {
+        self.trips.get(id)
     }
 
     /// Creates a node, adds it to the node vector, returns the id

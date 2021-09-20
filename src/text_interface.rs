@@ -4,12 +4,19 @@ use std::io::Write;
 use crate::network::*;
 
 #[derive(Debug, PartialEq, Eq)]
-pub enum Command {
+enum Command {
     Help,
     Invalid,
+    GetConnection,
     PrintNode(usize),
     PrintStop(String),
     PrintTrip(String),
+}
+
+enum ConnectionState {
+    Wait,
+    PedestrianTransfer,
+    Transport,
 }
 
 pub fn get_time_string(time_in_seconds: u32) -> String {
@@ -30,6 +37,16 @@ fn print_node(node: &Node) {
     println!("Node with id {}, time {}:", node.node_id, get_time_string(node.get_time()));
     print_location(node.get_location());
     println!(" - Edges to nodes {:?}", node.get_edges());
+}
+
+fn print_connection(nw: &Network, conn: &Connection) {
+    let mut state = ConnectionState::Wait;
+    for node in &conn.nodes {
+        match node.get_location() {
+            Location::Stop(id) => println!("time: {}, stop: {}", get_time_string(node.get_time()), nw.get_stop(id).unwrap().stop_name),
+            Location::Trip(id) => println!("time: {}, trip: {}", get_time_string(node.get_time()), nw.get_trip(id).unwrap().route_id),
+        }
+    }
 }
 
 fn parse_print_node(args: &[&str]) -> Command {
@@ -62,6 +79,10 @@ fn parse_print_trip(args: &[&str]) -> Command {
     }
 }
 
+fn parse_conn(args: &[&str]) -> Command {
+    Command::GetConnection
+}
+
 fn command_from_line(line: &str) -> Command {
     let args: Vec<&str> = line.trim().split(" ").collect();
 
@@ -70,6 +91,7 @@ fn command_from_line(line: &str) -> Command {
         "node" => parse_print_node(&args[1..]),
         "stop" => parse_print_stop(&args[1..]),
         "trip" => parse_print_trip(&args[1..]),
+        "conn" => parse_conn(&args[1..]),
         "help" => Command::Help,
         _ => Command::Invalid,
     }
@@ -115,17 +137,23 @@ pub fn process_command(nw: &Network) {
             print_node(node);
         },
         Command::PrintStop(id) => {
-            match nw.get_stop(id) {
+            match nw.get_stop(&id) {
                 Some(stop) => println!("{:?}", stop),
                 None => println!("ERROR: no stop with such id")
             }
         },
         Command::PrintTrip(id) => {
-            match nw.get_trip(id) {
+            match nw.get_trip(&id) {
                 Some(trip) => println!("{:?}", trip),
                 None => println!("ERROR: no trip with such id")
             }
         },
+        Command::GetConnection => {
+            let dummy = Connection {
+                nodes: vec![nw.get_node(0).clone(), nw.get_node(1).clone(), nw.get_node(2).clone()],
+            };
+            print_connection(nw, &dummy);
+        }
         _ => (), 
     } 
 }
