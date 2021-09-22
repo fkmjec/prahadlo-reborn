@@ -76,12 +76,19 @@ impl PartialOrd for Node {
 }
 
 #[derive(Debug)]
+struct StopGroup {
+    pub name: String,
+    pub stops: Vec<String>,
+}
+
+#[derive(Debug)]
 pub struct Network {
     stops: HashMap<String, Stop>,
     routes: HashMap<String, Route>,
     trips: HashMap<String, Trip>,
     services: HashMap<String, Service>,
     stop_node_chains: HashMap<String, Vec<usize>>,
+    stop_groups: HashMap<String, StopGroup>,
     nodes: Vec<Node>,
 }
 
@@ -226,7 +233,30 @@ impl Network {
                     };
                 }
             }
-        } 
+        }
+    }
+
+    fn get_root_stop_id(stop_id: &String) -> String {
+        let mut result = String::from(stop_id);
+        for i in 1..stop_id.len() {
+            if stop_id.chars().nth(i).unwrap().is_alphabetic() {
+                result = String::from(&stop_id[0..i]);
+            }
+        }
+        return result;
+    }
+
+    fn create_stop_groups(stops: &HashMap<String, Stop>) -> HashMap<String, StopGroup> {
+        let mut result: HashMap<String, StopGroup> = HashMap::new();
+        for (stop_id, stop) in stops {
+            let root_id = Network::get_root_stop_id(stop_id);
+            if let Some(stop_group) = result.get_mut(&root_id) {
+                stop_group.stops.push(stop_id.clone());
+            } else {
+                result.insert(root_id, StopGroup {name: stop.stop_name.clone(), stops: vec![stop_id.clone()]});
+            }
+        }
+        result
     }
     
     pub fn new(
@@ -239,7 +269,7 @@ impl Network {
         let service_exceptions = load_service_exceptions(path, &mut services);
         let stop_times = load_stop_times(path, &mut trips);
         let mut nodes = Vec::new();
-
+        let stop_groups = Network::create_stop_groups(&stops);
         Network::create_transport_nodes(&mut nodes, &trips);
         let stop_node_chains = Network::create_node_chains(&mut nodes);
         Network::add_pedestrian_connections(&mut nodes, &stops, &stop_node_chains);
@@ -250,6 +280,7 @@ impl Network {
             trips: trips,
             services: services,
             stop_node_chains: stop_node_chains,
+            stop_groups: stop_groups,
             nodes: nodes,
         };
 
