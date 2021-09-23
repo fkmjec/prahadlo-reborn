@@ -112,6 +112,7 @@ fn print_help() {
     println!(" - node [node_id] - prints information about a node with the id");
     println!(" - stop [stop_id] - prints information about a stop with the id");
     println!(" - trip [trip_id] - prints information about a trip with the id");
+    println!(" - conn [time] [stop_name_1] [stop_name_2] - finds a connection between the stops");
 }
 
 fn print_invalid() {

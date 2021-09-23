@@ -240,6 +240,7 @@ impl Network {
         for i in 1..stop_id.len() {
             if stop_id.chars().nth(i).unwrap().is_alphabetic() {
                 result = String::from(&stop_id[0..i]);
+                return result;
             }
         }
         return result;
@@ -296,7 +297,7 @@ impl Network {
             let score = levenshtein(name.as_str(), g.name.as_str());
             best_score = match best_score {
                 Some(past_score) => {
-                    if score > past_score {
+                    if score < past_score {
                         closest = Some(g);
                         Some(score)
                     } else {
@@ -359,6 +360,7 @@ impl Network {
                     path.push(self.nodes[index].clone());
                     index = came_from[index] as usize;
                 }
+                path.push(self.nodes[index].clone());
                 path.reverse();
                 return Ok(Some(Connection {nodes: path}));
             }
