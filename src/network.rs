@@ -1,8 +1,8 @@
 use crate::gtfs::*;
 use crate::geo_utils::*;
+use crate::str_utils::*;
 
 use core::cmp::Ordering;
-use strsim::levenshtein;
 use std::collections::{BinaryHeap, HashMap, HashSet};
 use std::path::Path;
 
@@ -76,7 +76,7 @@ impl PartialOrd for Node {
 
 #[derive(Debug)]
 struct StopGroup {
-    pub name: String,
+    pub names: Vec<String>,
     pub stops: HashSet<String>,
 }
 
@@ -251,11 +251,12 @@ impl Network {
         for (stop_id, stop) in stops {
             let root_id = Network::get_root_stop_id(stop_id);
             if let Some(stop_group) = result.get_mut(&root_id) {
+                stop_group.names.push(stop.stop_name.clone());
                 stop_group.stops.insert(stop_id.clone());
             } else {
                 let mut stops_in_group = HashSet::new();
                 stops_in_group.insert(stop_id.clone());
-                result.insert(root_id, StopGroup {name: stop.stop_name.clone(), stops: stops_in_group });
+                result.insert(root_id, StopGroup {names: vec![stop.stop_name.clone()], stops: stops_in_group });
             }
         }
         result
@@ -294,19 +295,21 @@ impl Network {
         let mut closest = None;
         let mut best_score = None;
         for (_, g) in &self.stop_groups {
-            let score = levenshtein(name.as_str(), g.name.as_str());
-            best_score = match best_score {
-                Some(past_score) => {
-                    if score < past_score {
+            for stop_name in &g.names {
+                let score = get_common_prefix_len(&name, stop_name);
+                best_score = match best_score {
+                    Some(past_score) => {
+                        if score > past_score {
+                            closest = Some(g);
+                            Some(score)
+                        } else {
+                            Some(past_score)
+                        }
+                    },
+                    None => {
                         closest = Some(g);
                         Some(score)
-                    } else {
-                        Some(past_score)
                     }
-                },
-                None => {
-                    closest = Some(g);
-                    Some(score)
                 }
             }
         }

@@ -2,6 +2,7 @@ use std::path::Path;
 
 mod gtfs;
 mod network;
+mod str_utils;
 mod text_interface;
 mod geo_utils;
 
