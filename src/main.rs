@@ -12,8 +12,9 @@ use text_interface::*;
 fn main() {
     println!("Hello, world! Prahadlo here!");
     let nw = Network::new(Path::new("data/"));
+    let mut interface = TextInterface::new("history.txt");
     nw.print_debug_info();
     loop {
-        process_command(&nw);
+        interface.process_command(&nw);
     }
 }

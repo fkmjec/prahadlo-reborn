@@ -1,7 +1,9 @@
-use std::io;
-use std::io::Write;
+use std::process::exit;
 
 use crate::network::*;
+
+use rustyline::error::ReadlineError;
+use rustyline::Editor;
 
 #[derive(Debug, PartialEq, Eq)]
 enum Command {
@@ -17,6 +19,10 @@ enum ConnectionState {
     Wait,
     PedestrianTransfer,
     Transport,
+}
+
+pub struct TextInterface {
+    rl: Editor<()>,
 }
 
 pub fn get_time_string(time_in_seconds: u32) -> String {
@@ -79,7 +85,8 @@ fn parse_print_trip(args: &[&str]) -> Command {
     }
 }
 
-fn parse_connection(args: &[&str]) -> Command {
+fn parse_connection(conn_details: &String) -> Command {
+    let args: Vec<&str> = conn_details.split("|").map(|x| x.trim()).collect();
     if args.len() == 3 {
         let time_res = args[0].parse::<u32>();
         let dep_stop_id = String::from(args[1]);
@@ -94,14 +101,16 @@ fn parse_connection(args: &[&str]) -> Command {
 }
 
 fn command_from_line(line: &str) -> Command {
-    let args: Vec<&str> = line.trim().split(" ").collect();
+    let complete_input: Vec<&str> = line.trim().split(" ").collect();
+    let command_type = complete_input[0];
+    let args = &complete_input[1..];
 
     // TODO: add validation of command arguments
-    match args[0] {
-        "node" => parse_print_node(&args[1..]),
-        "stop" => parse_print_stop(&args[1..]),
-        "trip" => parse_print_trip(&args[1..]),
-        "conn" => parse_connection(&args[1..]),
+    match command_type {
+        "node" => parse_print_node(args),
+        "stop" => parse_print_stop(args),
+        "trip" => parse_print_trip(args),
+        "conn" => parse_connection(&args.join(" ")),
         "help" => Command::Help,
         _ => Command::Invalid,
     }
@@ -112,65 +121,78 @@ fn print_help() {
     println!(" - node [node_id] - prints information about a node with the id");
     println!(" - stop [stop_id] - prints information about a stop with the id");
     println!(" - trip [trip_id] - prints information about a trip with the id");
-    println!(" - conn [time] [stop_name_1] [stop_name_2] - finds a connection between the stops");
+    println!(" - conn [time] | [stop_name_1] | [stop_name_2] - finds a connection between the stops. ");
 }
 
 fn print_invalid() {
     println!("The command you entered was incorrect!");
 }
 
-fn get_command() -> Command {
-    let mut line = String::new();
-    print!("> ");
-    io::stdout().flush().unwrap();
-    std::io::stdin().read_line(&mut line).unwrap();
-    let mut command = command_from_line(&line);
-    while command == Command::Invalid || command == Command::Help {
-        if command == Command::Invalid {
-            print_invalid();
-        } else {
-            print_help();
+impl TextInterface {
+    pub fn new(history_file: &str) -> TextInterface {
+        let mut rl = Editor::<()>::new();
+        if rl.load_history(history_file).is_err() {
+            println!("No previous history.");
         }
-        let mut line = String::new();
-        print!("> ");
-        io::stdout().flush().unwrap();
-        std::io::stdin().read_line(&mut line).unwrap();    
-        command = command_from_line(&line);
+        TextInterface { rl: rl }
     }
-    command
-}
 
-pub fn process_command(nw: &Network) {
-    let cmd = get_command();
-    match cmd {
-        Command::PrintNode(id) => {
-            let node = nw.get_node(id);
-            print_node(node);
-        },
-        Command::PrintStop(id) => {
-            match nw.get_stop(&id) {
-                Some(stop) => println!("{:?}", stop),
-                None => println!("ERROR: no stop with such id")
-            }
-        },
-        Command::PrintTrip(id) => {
-            match nw.get_trip(&id) {
-                Some(trip) => println!("{:?}", trip),
-                None => println!("ERROR: no trip with such id")
-            }
-        },
-        Command::GetConnection(time, s1, s2) => {
-            let lookup_result = nw.find_connection(&s1, &s2, time);
-            match lookup_result {
-                Ok(maybe_connection) => {
-                    match maybe_connection {
-                        Some(conn) => print_connection(nw, &conn),
-                        None => println!("No connection found, sorry!"),
-                    }
-                },
-                Err(err_string) => println!("{}", err_string),
+    fn get_command(&mut self) -> Command {
+        let readline = self.rl.readline(">> ");
+        match readline {
+            Ok(line) => {
+                self.rl.add_history_entry(line.as_str());
+                let command = command_from_line(&line);
+                command        
+            },
+            Err(ReadlineError::Interrupted) => {
+                println!("CTRL-C");
+                exit(0);
+            },
+            Err(ReadlineError::Eof) => {
+                println!("CTRL-D");
+                exit(0);
+            },
+            Err(err) => {
+                println!("Error: {:?}", err);
+                Command::Invalid
             }
         }
-        _ => (), 
-    } 
+    }
+
+    pub fn process_command(&mut self, nw: &Network) {
+        let cmd = self.get_command();
+        match cmd {
+            Command::PrintNode(id) => {
+                let node = nw.get_node(id);
+                print_node(node);
+            },
+            Command::PrintStop(id) => {
+                match nw.get_stop(&id) {
+                    Some(stop) => println!("{:?}", stop),
+                    None => println!("ERROR: no stop with such id")
+                }
+            },
+            Command::PrintTrip(id) => {
+                match nw.get_trip(&id) {
+                    Some(trip) => println!("{:?}", trip),
+                    None => println!("ERROR: no trip with such id")
+                }
+            },
+            Command::GetConnection(time, s1, s2) => {
+                let lookup_result = nw.find_connection(&s1, &s2, time);
+                match lookup_result {
+                    Ok(maybe_connection) => {
+                        match maybe_connection {
+                            Some(conn) => print_connection(nw, &conn),
+                            None => println!("No connection found, sorry!"),
+                        }
+                    },
+                    Err(err_string) => println!("{}", err_string),
+                }
+            },
+            Command::Help => print_help(),
+            Command::Invalid => print_invalid(),
+        } 
+    }
 }
