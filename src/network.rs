@@ -1,10 +1,9 @@
 use crate::gtfs::*;
 use crate::geo_utils::*;
-use crate::text_interface::*;
 
 use core::cmp::Ordering;
-use std::cmp::Reverse;
-use std::collections::{BinaryHeap, HashMap};
+use strsim::levenshtein;
+use std::collections::{BinaryHeap, HashMap, HashSet};
 use std::path::Path;
 
 const MAX_PEDESTRIAN_DIST: f32 = 500.0;
@@ -78,7 +77,7 @@ impl PartialOrd for Node {
 #[derive(Debug)]
 struct StopGroup {
     pub name: String,
-    pub stops: Vec<String>,
+    pub stops: HashSet<String>,
 }
 
 #[derive(Debug)]
@@ -251,9 +250,11 @@ impl Network {
         for (stop_id, stop) in stops {
             let root_id = Network::get_root_stop_id(stop_id);
             if let Some(stop_group) = result.get_mut(&root_id) {
-                stop_group.stops.push(stop_id.clone());
+                stop_group.stops.insert(stop_id.clone());
             } else {
-                result.insert(root_id, StopGroup {name: stop.stop_name.clone(), stops: vec![stop_id.clone()]});
+                let mut stops_in_group = HashSet::new();
+                stops_in_group.insert(stop_id.clone());
+                result.insert(root_id, StopGroup {name: stop.stop_name.clone(), stops: stops_in_group });
             }
         }
         result
@@ -266,8 +267,8 @@ impl Network {
         let routes = load_routes(path);
         let mut trips = load_trips(path);
         let mut services = load_services(path);
-        let service_exceptions = load_service_exceptions(path, &mut services);
-        let stop_times = load_stop_times(path, &mut trips);
+        load_service_exceptions(path, &mut services);
+        load_stop_times(path, &mut trips);
         let mut nodes = Vec::new();
         let stop_groups = Network::create_stop_groups(&stops);
         Network::create_transport_nodes(&mut nodes, &trips);
@@ -286,54 +287,91 @@ impl Network {
 
         nw
     }
+
+    /// Compares the names with the supplied name and returns the most similar one (by Levehnstein)
+    fn get_stop_group_by_name(&self, name: &String) -> Option<&StopGroup> {
+        let mut closest = None;
+        let mut best_score = None;
+        for (_, g) in &self.stop_groups {
+            let score = levenshtein(name.as_str(), g.name.as_str());
+            best_score = match best_score {
+                Some(past_score) => {
+                    if score > past_score {
+                        closest = Some(g);
+                        Some(score)
+                    } else {
+                        Some(past_score)
+                    }
+                },
+                None => {
+                    closest = Some(g);
+                    Some(score)
+                }
+            }
+        }
+        closest
+    }
+
+    fn get_departures_from_stop_group_after_time(&self, group: &StopGroup, time: u32) -> Vec<&Node> {
+        let mut result = Vec::new();
+        for stop_id in &group.stops {
+            if let Some(dep) = self.get_first_departure(&stop_id, time) {
+                result.push(&self.nodes[dep]);
+            }
+        }
+        result
+    }
+
+    fn is_destination(&self, node: &Node, dest_stop_group: &StopGroup) -> bool {
+        match node.get_location() {
+            Location::Stop(stop_id) => {
+                dest_stop_group.stops.contains(stop_id)
+            },
+            Location::Trip(_) => false,
+        }
+    }
     
     pub fn find_connection(
         &self,
-        dep_stop_id: &String,
-        dest_stop_id: &String,
+        dep_stop_name: &String,
+        dest_stop_name: &String,
         time: u32,
     ) -> Result<Option<Connection>, &str> {
         let mut dists = vec![-1; self.nodes.len()];
         let mut came_from: Vec<i32> = vec![-1; self.nodes.len()];
-        let mut heap = BinaryHeap::new();
-        let start_stop = self.stops.get(dep_stop_id).ok_or("Departure stop not found")?;
-        let end_stop = self.stops.get(dep_stop_id).ok_or("Destination stop not found")?;
+
+        // this potentially belongs higher-up in the hierarchy and not in the model
+        let start_stop_group = self.get_stop_group_by_name(dep_stop_name).ok_or("Departure stop not found")?;
+        let dest_stop_group = self.get_stop_group_by_name(dest_stop_name).ok_or("Destination stop not found")?;
         
-        let start = self.get_first_departure(dep_stop_id, time);
-        if start.is_none() {
-            return Ok(None);
+        let starts = self.get_departures_from_stop_group_after_time(&start_stop_group, time);
+        for s in &starts {
+            dists[s.node_id] = time as i32;
         }
 
-        dists[start.unwrap()] = time as i32;
-        heap.push(&self.nodes[start.unwrap()]);
+        let mut heap = BinaryHeap::from(starts);
 
-        while let Some(popped) = heap.pop() {
-            let node_struct = popped;
-            match node_struct.get_location() {
-                Location::Stop(stop_id) => {
-                    if stop_id.as_str() == dest_stop_id {
-                        let mut index = popped.node_id;
-                        let mut path = Vec::new();
-                        while came_from[index] != -1 {
-                            path.push(self.nodes[index].clone());
-                            index = came_from[index] as usize;
-                        }
-                        path.reverse();
-                        return Ok(Some(Connection {nodes: path}));
-                    }
-                },
-                _ => (),
+        while let Some(node) = heap.pop() {
+            if self.is_destination(node, dest_stop_group) {
+                let mut index = node.node_id;
+                let mut path = Vec::new();
+                while came_from[index] != -1 {
+                    path.push(self.nodes[index].clone());
+                    index = came_from[index] as usize;
+                }
+                path.reverse();
+                return Ok(Some(Connection {nodes: path}));
             }
 
-            for target_node in node_struct.get_edges() {
+            for target_node in node.get_edges() {
                 let target_node_time = self.nodes[*target_node].get_time() as i32;
                 if dists[*target_node] == -1 || (target_node_time < dists[*target_node]) {
                     heap.push(&self.nodes[*target_node]);
                     dists[*target_node] = target_node_time;
-                    came_from[*target_node] = popped.node_id as i32;
+                    came_from[*target_node] = node.node_id as i32;
                 }
             }
-            dists[popped.node_id] = node_struct.get_time() as i32;
+            dists[node.node_id] = node.get_time() as i32;
         }
         return Ok(None);
     }
