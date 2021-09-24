@@ -4,12 +4,15 @@ use crate::network::*;
 
 use rustyline::error::ReadlineError;
 use rustyline::Editor;
+use chrono::NaiveDateTime;
+
+const datetime_format: &str = "%Y-%m-%d %H:%M:%S";
 
 #[derive(Debug, PartialEq, Eq)]
 enum Command {
     Help,
     Invalid,
-    GetConnection(u32, String, String),
+    GetConnection(NaiveDateTime, String, String),
     PrintNode(usize),
     PrintStop(String),
     PrintTrip(String),
@@ -35,7 +38,7 @@ pub fn get_time_string(time_in_seconds: u32) -> String {
 fn print_location(location: &Location) {
     match location {
         Location::Stop(stop_id) => println!(" - corresponding to stop {}", stop_id),
-        Location::Trip(trip_id) => println!(" - corresponding to trip {}", trip_id),
+        Location::Trip(trip_id, _) => println!(" - corresponding to trip {}", trip_id),
     };
 }
 
@@ -50,7 +53,7 @@ fn print_connection(nw: &Network, conn: &Connection) {
     for node in &conn.nodes {
         match node.get_location() {
             Location::Stop(id) => println!("time: {}, stop: {}", get_time_string(node.get_time()), nw.get_stop(id).unwrap().stop_name),
-            Location::Trip(id) => println!("time: {}, trip: {}", get_time_string(node.get_time()), nw.get_trip(id).unwrap().route_id),
+            Location::Trip(id, _) => println!("time: {}, trip: {}", get_time_string(node.get_time()), nw.get_trip(id).unwrap().route_id),
         }
     }
 }
@@ -88,7 +91,7 @@ fn parse_print_trip(args: &[&str]) -> Command {
 fn parse_connection(conn_details: &String) -> Command {
     let args: Vec<&str> = conn_details.split("|").map(|x| x.trim()).collect();
     if args.len() == 3 {
-        let time_res = args[0].parse::<u32>();
+        let time_res = NaiveDateTime::parse_from_str(args[0], datetime_format);
         let dep_stop_id = String::from(args[1]);
         let dest_stop_id = String::from(args[2]);
         match time_res {
@@ -121,7 +124,7 @@ fn print_help() {
     println!(" - node [node_id] - prints information about a node with the id");
     println!(" - stop [stop_id] - prints information about a stop with the id");
     println!(" - trip [trip_id] - prints information about a trip with the id");
-    println!(" - conn [time] | [stop_name_1] | [stop_name_2] - finds a connection between the stops. ");
+    println!(" - conn [time] | [stop_name_1] | [stop_name_2] - finds a connection between the stops. \n [time] is in the format YYYY-MM-DD HH:MM:SS");
 }
 
 fn print_invalid() {

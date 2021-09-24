@@ -5,6 +5,15 @@ use crate::str_utils::*;
 use core::cmp::Ordering;
 use std::collections::{BinaryHeap, HashMap, HashSet};
 use std::path::Path;
+use std::hash::Hash;
+use std::borrow::Borrow;
+
+use std::rc::Rc;
+
+use chrono::NaiveDateTime;
+use chrono::Weekday;
+use chrono::Datelike;
+use chrono::Timelike;
 
 const MAX_PEDESTRIAN_DIST: f32 = 500.0;
 const PEDESTRIAN_SPEED: f32 = 1.0;
@@ -12,7 +21,7 @@ const PEDESTRIAN_SPEED: f32 = 1.0;
 #[derive(Debug, Clone)]
 pub enum Location {
     Stop(String), // Tohle je blbě, je to kvůli tomu zbytečně veliké
-    Trip(String),
+    Trip(String, Rc<Service>),
 }
 
 #[derive(Debug, Clone)]
@@ -80,12 +89,24 @@ struct StopGroup {
     pub stops: HashSet<String>,
 }
 
+fn does_trip_operate(day: &Weekday, service: &Service) -> bool {
+    match day {
+        Monday => service.monday,
+        Tuesday => service.tuesday,
+        Wednesday => service.wednesday,
+        Thursday => service.thursday,
+        Friday => service.friday,
+        Saturday => service.saturday,
+        Sunday => service.sunday,
+    }
+}
+
 #[derive(Debug)]
 pub struct Network {
     stops: HashMap<String, Stop>,
     routes: HashMap<String, Route>,
     trips: HashMap<String, Trip>,
-    services: HashMap<String, Service>,
+    services: HashMap<String, Rc<Service>>,
     stop_node_chains: HashMap<String, Vec<usize>>,
     stop_groups: HashMap<String, StopGroup>,
     nodes: Vec<Node>,
@@ -120,7 +141,7 @@ impl Network {
         return node_id;
     }
 
-    fn create_transport_nodes(nodes: &mut Vec<Node>, trips: &HashMap<String, Trip>) {
+    fn create_transport_nodes(nodes: &mut Vec<Node>, trips: &HashMap<String, Trip>, services: &HashMap<String, Rc<Service>>) {
         // creates transport nodes and the corresponding arrival and departure ones.
         // FIXME extract to a function outside.
 
@@ -131,7 +152,8 @@ impl Network {
                 let stop_time = &trip.stop_times[j];
                 let stop_id = stop_time.stop_id.clone();
 
-                let transport: usize = Network::create_node(nodes, Location::Trip(trip_id.clone()), stop_time.departure_time);
+                let service_ptr = services.get(&trip.service_id).unwrap();
+                let transport: usize = Network::create_node(nodes, Location::Trip(trip_id.clone(), service_ptr.clone()), stop_time.departure_time);
                 // add edge from previous transport node
                 match prev_transport {
                     Some(id) => nodes[id].add_edge(transport),
@@ -178,7 +200,7 @@ impl Network {
                         },
                     };  
                 },
-                Location::Trip(_) => (),
+                Location::Trip(_, _) => (),
             }
         }
         Network::add_node_chaining(nodes, &mut nodes_by_stops);
@@ -262,18 +284,27 @@ impl Network {
         result
     }
     
+    fn get_as_rc<K: Eq + Hash, V>(raw: HashMap<K, V>) -> HashMap<K, Rc<V>> {
+        let mut result = HashMap::new();
+        for (k, v) in raw {
+            result.insert(k, Rc::new(v));
+        }
+        result
+    }
+
     pub fn new(
         path: &Path
     ) -> Network {
         let stops = load_stops(path);
         let routes = load_routes(path);
         let mut trips = load_trips(path);
-        let mut services = load_services(path);
-        load_service_exceptions(path, &mut services);
+        let mut raw_services = load_services(path);
+        load_service_exceptions(path, &mut raw_services);
+        let services = Network::get_as_rc(raw_services);
         load_stop_times(path, &mut trips);
         let mut nodes = Vec::new();
         let stop_groups = Network::create_stop_groups(&stops);
-        Network::create_transport_nodes(&mut nodes, &trips);
+        Network::create_transport_nodes(&mut nodes, &trips, &services);
         let stop_node_chains = Network::create_node_chains(&mut nodes);
         Network::add_pedestrian_connections(&mut nodes, &stops, &stop_node_chains);
 
@@ -331,7 +362,14 @@ impl Network {
             Location::Stop(stop_id) => {
                 dest_stop_group.stops.contains(stop_id)
             },
-            Location::Trip(_) => false,
+            Location::Trip(_, _) => false,
+        }
+    }
+
+    fn can_take_edge(&self, day: &Weekday, dep_node: &Node, dest_node: &Node) -> bool {
+        match dest_node.get_location() {
+            Location::Trip(trip_id, service) => does_trip_operate(day, service.borrow()),
+            Location::Stop(_) => true,
         }
     }
     
@@ -339,8 +377,11 @@ impl Network {
         &self,
         dep_stop_name: &String,
         dest_stop_name: &String,
-        time: u32,
+        datetime: NaiveDateTime,
     ) -> Result<Option<Connection>, &str> {
+        let day = datetime.date().weekday();
+        let seconds = datetime.hour() * 3600 + datetime.minute() * 60 + datetime.second();
+
         let mut dists = vec![-1; self.nodes.len()];
         let mut came_from: Vec<i32> = vec![-1; self.nodes.len()];
 
@@ -348,9 +389,9 @@ impl Network {
         let start_stop_group = self.get_stop_group_by_name(dep_stop_name).ok_or("Departure stop not found")?;
         let dest_stop_group = self.get_stop_group_by_name(dest_stop_name).ok_or("Destination stop not found")?;
         
-        let starts = self.get_departures_from_stop_group_after_time(&start_stop_group, time);
+        let starts = self.get_departures_from_stop_group_after_time(&start_stop_group, seconds);
         for s in &starts {
-            dists[s.node_id] = time as i32;
+            dists[s.node_id] = seconds as i32;
         }
 
         let mut heap = BinaryHeap::from(starts);
@@ -370,7 +411,7 @@ impl Network {
 
             for target_node in node.get_edges() {
                 let target_node_time = self.nodes[*target_node].get_time() as i32;
-                if dists[*target_node] == -1 || (target_node_time < dists[*target_node]) {
+                if dists[*target_node] == -1 || (target_node_time < dists[*target_node]) && self.can_take_edge(&day, node, &self.nodes[*target_node]) {
                     heap.push(&self.nodes[*target_node]);
                     dists[*target_node] = target_node_time;
                     came_from[*target_node] = node.node_id as i32;
