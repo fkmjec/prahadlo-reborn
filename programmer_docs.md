@@ -71,7 +71,8 @@ as the time of departure:
   * we return the connection as a list of nodes the connection goes through
 
 The Dijkstra algorithm was chosen because it is quite fast with this size of input data,
-and it is simple enough to implement.  
+and it is simple enough to implement. A detailed description of how it works can be found
+on [wikipedia](https://en.wikipedia.org/wiki/Dijkstra%27s_algorithm).
 
 ## module `text_interface` - the UI
 This module contains the struct `TextInterface`, which is the main parser of input in the program,
