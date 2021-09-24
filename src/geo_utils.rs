@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::rc::Rc;
 
 use crate::gtfs::*;
 
@@ -7,7 +8,7 @@ use proj::Proj;
 
     
 /// Converts stop coordinates in WGS84 to UTM coordinates in zone 33U
-pub fn get_stop_coords_in_utm(stops: &HashMap<String, Stop>) -> HashMap<String, Point<f32>> {
+pub fn get_stop_coords_in_utm(stops: &HashMap<String, Rc<Stop>>) -> HashMap<String, Point<f32>> {
     let mut stop_coords: HashMap<String, Point<f32>> = HashMap::new();
     for (stop_id, stop) in stops {
         let from = "EPSG:4326";
@@ -48,7 +49,7 @@ pub fn calculate_proximity_squares(
 /// and it efficiently computes connections between stops closer than max_conn_dist. (efficiently means faster than
 /// O(N^2) N being the number of all stops.
 pub fn get_pedestrian_connections(
-    stops: &HashMap<String, Stop>,
+    stops: &HashMap<String, Rc<Stop>>,
     utm_coords: &HashMap<String, Point<f32>>,
     squares: &HashMap<(i32, i32), Vec<String>>,
     max_conn_dist: f32,

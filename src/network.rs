@@ -21,8 +21,8 @@ pub static MINIMAL_TRANSFER_TIME: u32 = 60;
 
 #[derive(Debug, Clone)]
 pub enum Location {
-    Stop(String), // Tohle je blbě, je to kvůli tomu zbytečně veliké
-    Trip(String, Rc<Service>),
+    Stop(Rc<Stop>), // Tohle je blbě, je to kvůli tomu zbytečně veliké
+    Trip(Rc<Trip>, Rc<Service>),
 }
 
 #[derive(Debug, Clone)]
@@ -104,9 +104,9 @@ fn does_trip_operate(day: &Weekday, service: &Service) -> bool {
 
 #[derive(Debug)]
 pub struct Network {
-    stops: HashMap<String, Stop>,
+    stops: HashMap<String, Rc<Stop>>,
     routes: HashMap<String, Route>,
-    trips: HashMap<String, Trip>,
+    trips: HashMap<String, Rc<Trip>>,
     services: HashMap<String, Rc<Service>>,
     stop_node_chains: HashMap<String, Vec<usize>>,
     stop_groups: HashMap<String, StopGroup>,
@@ -126,11 +126,11 @@ impl Network {
         &self.nodes[id]
     }
 
-    pub fn get_stop(&self, id: &String) -> Option<&Stop> {
+    pub fn get_stop(&self, id: &String) -> Option<&Rc<Stop>> {
         self.stops.get(id)
     }
 
-    pub fn get_trip(&self, id: &String) -> Option<&Trip> {
+    pub fn get_trip(&self, id: &String) -> Option<&Rc<Trip>> {
         self.trips.get(id)
     }
 
@@ -142,26 +142,25 @@ impl Network {
         return node_id;
     }
 
-    fn create_transport_nodes(nodes: &mut Vec<Node>, trips: &HashMap<String, Trip>, services: &HashMap<String, Rc<Service>>) {
+    fn create_transport_nodes(nodes: &mut Vec<Node>, trips: &HashMap<String, Rc<Trip>>, stops: &HashMap<String, Rc<Stop>>, services: &HashMap<String, Rc<Service>>) {
         // creates transport nodes and the corresponding arrival and departure ones.
         // FIXME extract to a function outside.
 
         for trip in trips.values() {
             let mut prev_transport: Option<usize> = None;
-            let trip_id = trip.trip_id.clone();
             for j in 0..trip.stop_times.len() {
                 let stop_time = &trip.stop_times[j];
-                let stop_id = stop_time.stop_id.clone();
+                let stop = stops.get(&stop_time.stop_id).unwrap();
 
                 let service_ptr = services.get(&trip.service_id).unwrap();
-                let transport: usize = Network::create_node(nodes, Location::Trip(trip_id.clone(), service_ptr.clone()), stop_time.departure_time);
+                let transport: usize = Network::create_node(nodes, Location::Trip(trip.clone(), service_ptr.clone()), stop_time.departure_time);
                 // add edge from previous transport node
                 match prev_transport {
                     Some(id) => nodes[id].add_edge(transport),
                     None => (),
                 }
-                let dep = Network::create_node(nodes, Location::Stop(stop_id.clone()), stop_time.departure_time);
-                let arr = Network::create_node(nodes, Location::Stop(stop_id.clone()), stop_time.arrival_time + MINIMAL_TRANSFER_TIME);
+                let dep = Network::create_node(nodes, Location::Stop(stop.clone()), stop_time.departure_time);
+                let arr = Network::create_node(nodes, Location::Stop(stop.clone()), stop_time.arrival_time + MINIMAL_TRANSFER_TIME);
                 nodes[transport].add_edge(arr);
                 nodes[dep].add_edge(transport);
                 prev_transport = Some(transport);
@@ -193,11 +192,11 @@ impl Network {
         
         for (index, node) in nodes.iter().enumerate() {
             match &node.location {
-                Location::Stop(id) => {
-                    match nodes_by_stops.get_mut(id) {
+                Location::Stop(stop) => {
+                    match nodes_by_stops.get_mut(&stop.stop_id) {
                         Some(vector) => vector.push(index),
                         None => {
-                            nodes_by_stops.insert(id.clone(), vec![index]);
+                            nodes_by_stops.insert(stop.stop_id.clone(), vec![index]);
                         },
                     };  
                 },
@@ -234,7 +233,7 @@ impl Network {
         best
     }
 
-    fn add_pedestrian_connections(nodes: &mut Vec<Node>, stops: &HashMap<String, Stop>, stop_node_chains: &HashMap<String, Vec<usize>>) {
+    fn add_pedestrian_connections(nodes: &mut Vec<Node>, stops: &HashMap<String, Rc<Stop>>, stop_node_chains: &HashMap<String, Vec<usize>>) {
         let coords = get_stop_coords_in_utm(stops);
         let squares = calculate_proximity_squares(&coords, MAX_PEDESTRIAN_DIST);
         let connections = get_pedestrian_connections(stops, &coords, &squares, MAX_PEDESTRIAN_DIST);
@@ -269,7 +268,7 @@ impl Network {
         return result;
     }
 
-    fn create_stop_groups(stops: &HashMap<String, Stop>) -> HashMap<String, StopGroup> {
+    fn create_stop_groups(stops: &HashMap<String, Rc<Stop>>) -> HashMap<String, StopGroup> {
         let mut result: HashMap<String, StopGroup> = HashMap::new();
         for (stop_id, stop) in stops {
             let root_id = Network::get_root_stop_id(stop_id);
@@ -296,16 +295,17 @@ impl Network {
     pub fn new(
         path: &Path
     ) -> Network {
-        let stops = load_stops(path);
+        let stops = Network::get_as_rc(load_stops(path));
         let routes = load_routes(path);
-        let mut trips = load_trips(path);
+        let mut raw_trips = load_trips(path);
+        load_stop_times(path, &mut raw_trips);
+        let trips = Network::get_as_rc(raw_trips);
         let mut raw_services = load_services(path);
         load_service_exceptions(path, &mut raw_services);
         let services = Network::get_as_rc(raw_services);
-        load_stop_times(path, &mut trips);
         let mut nodes = Vec::new();
         let stop_groups = Network::create_stop_groups(&stops);
-        Network::create_transport_nodes(&mut nodes, &trips, &services);
+        Network::create_transport_nodes(&mut nodes, &trips, &stops, &services);
         let stop_node_chains = Network::create_node_chains(&mut nodes);
         Network::add_pedestrian_connections(&mut nodes, &stops, &stop_node_chains);
 
@@ -358,10 +358,18 @@ impl Network {
         result
     }
 
+    pub fn get_trip_short_name(&self, trip: &Rc<Trip>) -> String {
+        let route = self.routes.get(&trip.route_id).expect("No route found for trip!");
+        match &trip.trip_headsign {
+            Some(name) => route.route_short_name.clone(),
+            None => String::from("Unnamed trip"),
+        }
+    }    
+
     fn is_destination(&self, node: &Node, dest_stop_group: &StopGroup) -> bool {
         match node.get_location() {
-            Location::Stop(stop_id) => {
-                dest_stop_group.stops.contains(stop_id)
+            Location::Stop(stop) => {
+                dest_stop_group.stops.contains(&stop.stop_id)
             },
             Location::Trip(_, _) => false,
         }

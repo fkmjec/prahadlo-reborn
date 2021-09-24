@@ -1,6 +1,8 @@
 use std::process::exit;
+use std::rc::Rc;
 
 use crate::network::*;
+use crate::gtfs::Trip;
 
 use rustyline::error::ReadlineError;
 use rustyline::Editor;
@@ -31,8 +33,8 @@ pub fn get_time_string(time_in_seconds: u32) -> String {
 
 fn print_location(location: &Location) {
     match location {
-        Location::Stop(stop_id) => println!(" - corresponding to stop {}", stop_id),
-        Location::Trip(trip_id, _) => println!(" - corresponding to trip {}", trip_id),
+        Location::Stop(stop) => println!(" - corresponding to stop {}", stop.stop_name),
+        Location::Trip(trip, _) => println!(" - corresponding to trip {}", trip.trip_id),
     };
 }
 
@@ -57,27 +59,27 @@ fn print_connection(nw: &Network, conn: &Connection) {
         let hours = node.get_time() / 3600;
         let minutes = (node.get_time() - hours * 3600) / 60;
         match node.get_location() {
-            Location::Stop(stop_id1) => {
+            Location::Stop(stop1) => {
                 match past_node.get_location() {
-                    Location::Stop(stop_id2) => {
-                        if stop_id1 != stop_id2 {
-                            print!("{} -> ", get_time_string(node.get_time()));
-                            println!("pedestrian transfer from stop {} to stop {}", stop_id1, stop_id2);
+                    Location::Stop(stop2) => {
+                        if stop1.stop_id != stop2.stop_id {
+                            print!("{} -> ", get_time_string(past_node.get_time()));
+                            println!("{} -> {} : pedestrian transfer", stop2.stop_name, stop1.stop_name);
                         }
                     },
-                    Location::Trip(trip_id, _) => {
-                        print!("{}:{} -> ", hours, minutes);
-                        println!("getting off from trip {} at stop {}", trip_id, stop_id1);
+                    Location::Trip(trip, _) => {
+                        print!("{} -> ", get_time_string(node.get_time()));
+                        println!("{} : getting off line {}", stop1.stop_name, nw.get_trip_short_name(&trip));
                     }
                 }
             },
-            Location::Trip(trip_id1, _) => {
+            Location::Trip(trip, _) => {
                 match past_node.get_location() {
-                    Location::Stop(stop_id) => {
-                        print!("{}:{} -> ", hours, minutes);
-                        println!("boarding trip {} at stop {}", trip_id1, stop_id);
+                    Location::Stop(stop) => {
+                        print!("{} -> ", get_time_string(node.get_time()));
+                        println!("{} : boarding line {}", stop.stop_name, nw.get_trip_short_name(&trip));
                     },
-                    Location::Trip(trip_id2, _) => {},
+                    Location::Trip(_, _) => {},
                 }
             },
         }
