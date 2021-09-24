@@ -18,7 +18,11 @@ for everyone interested in the internal representation in the program.
 
 After running `cargo run`, you will be greeted with a prompt. The commands for the prompt are:
   * `conn [time] | [stop_name_1] | [stop_name_2]`
-  prints the shortest connection from [stop n.1] to [stop n.2] at the time provided. 
+  Finds and prints the shortest connection from [stop n.1] to [stop n.2] at the time provided.
+  Time must be provided in the format YYYY-MM-DD HH:MM:SS.
+  The stop names do not need to be exact - stops sharing the greatest common prefix with the
+  provided name will be chosen, along with some in their viscinity.
+
   * `help`
   prints a help message
   * `stop [stop_id]`
