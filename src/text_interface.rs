@@ -18,12 +18,6 @@ enum Command {
     PrintTrip(String),
 }
 
-enum ConnectionState {
-    Wait,
-    PedestrianTransfer,
-    Transport,
-}
-
 pub struct TextInterface {
     rl: Editor<()>,
 }
@@ -49,12 +43,45 @@ fn print_node(node: &Node) {
 }
 
 fn print_connection(nw: &Network, conn: &Connection) {
-    let mut state = ConnectionState::Wait;
-    for node in &conn.nodes {
-        match node.get_location() {
-            Location::Stop(id) => println!("time: {}, stop: {}", get_time_string(node.get_time()), nw.get_stop(id).unwrap().stop_name),
-            Location::Trip(id, _) => println!("time: {}, trip: {}", get_time_string(node.get_time()), nw.get_trip(id).unwrap().route_id),
+    let mut index = 0;
+    loop {
+        // Go through all the waiting stops at the beginning of the connection
+        match conn.nodes[index].location {
+            Location::Trip(_, _) => break,
+            _ => index = index + 1,
         }
+    }
+
+    let mut past_node = &conn.nodes[index-1];
+    for node in &conn.nodes[index..] {
+        let hours = node.get_time() / 3600;
+        let minutes = (node.get_time() - hours * 3600) / 60;
+        match node.get_location() {
+            Location::Stop(stop_id1) => {
+                match past_node.get_location() {
+                    Location::Stop(stop_id2) => {
+                        if stop_id1 != stop_id2 {
+                            print!("{} -> ", get_time_string(node.get_time()));
+                            println!("pedestrian transfer from stop {} to stop {}", stop_id1, stop_id2);
+                        }
+                    },
+                    Location::Trip(trip_id, _) => {
+                        print!("{}:{} -> ", hours, minutes);
+                        println!("getting off from trip {} at stop {}", trip_id, stop_id1);
+                    }
+                }
+            },
+            Location::Trip(trip_id1, _) => {
+                match past_node.get_location() {
+                    Location::Stop(stop_id) => {
+                        print!("{}:{} -> ", hours, minutes);
+                        println!("boarding trip {} at stop {}", trip_id1, stop_id);
+                    },
+                    Location::Trip(trip_id2, _) => {},
+                }
+            },
+        }
+        past_node = node;
     }
 }
 

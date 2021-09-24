@@ -5,8 +5,6 @@ use crate::gtfs::*;
 use geo_types::Point;
 use proj::Proj;
 
-pub static MINIMAL_TRANSFER_TIME: u32 = 0;
-
     
 /// Converts stop coordinates in WGS84 to UTM coordinates in zone 33U
 pub fn get_stop_coords_in_utm(stops: &HashMap<String, Stop>) -> HashMap<String, Point<f32>> {

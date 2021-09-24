@@ -17,6 +17,7 @@ use chrono::Timelike;
 
 const MAX_PEDESTRIAN_DIST: f32 = 500.0;
 const PEDESTRIAN_SPEED: f32 = 1.0;
+pub static MINIMAL_TRANSFER_TIME: u32 = 60;
 
 #[derive(Debug, Clone)]
 pub enum Location {
@@ -91,13 +92,13 @@ struct StopGroup {
 
 fn does_trip_operate(day: &Weekday, service: &Service) -> bool {
     match day {
-        Monday => service.monday,
-        Tuesday => service.tuesday,
-        Wednesday => service.wednesday,
-        Thursday => service.thursday,
-        Friday => service.friday,
-        Saturday => service.saturday,
-        Sunday => service.sunday,
+        Weekday::Mon => service.monday,
+        Weekday::Tue => service.tuesday,
+        Weekday::Wed => service.wednesday,
+        Weekday::Thu => service.thursday,
+        Weekday::Fri => service.friday,
+        Weekday::Sat => service.saturday,
+        Weekday::Sun => service.sunday,
     }
 }
 
@@ -368,7 +369,7 @@ impl Network {
 
     fn can_take_edge(&self, day: &Weekday, dep_node: &Node, dest_node: &Node) -> bool {
         match dest_node.get_location() {
-            Location::Trip(trip_id, service) => does_trip_operate(day, service.borrow()),
+            Location::Trip(_, service) => does_trip_operate(day, service.borrow()),
             Location::Stop(_) => true,
         }
     }
